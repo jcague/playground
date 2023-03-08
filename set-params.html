@@ -1,0 +1,118 @@
+<html>
+<head>
+<meta charset="utf-8">
+<script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+<script src="https://webrtc.github.io/samples/src/js/third_party/graph.js"></script>
+<script src="test-assert.js"></script>
+<script src="draw-graphs.js"></script>
+<style>
+video {
+  width: 320px;
+}
+.container {
+    display: inline-flex;
+}
+</style>
+</head>
+<body>
+<div id="local">
+  <h2>Local Video</h2>
+</div>
+<div id="remotes">
+  <h2>Remote Videos</h2>
+</div>
+<div id="controls">
+    <h2>Controls</h2>
+    <button id="scale">Scale Resolution Down By 2</button><p/>
+    <span id="encodingInfo"></span>
+</div>
+<p>
+  The ?resolution=<i>1080p|720p|360p</i> parameter restricts the getUserMedia resolution.<br>
+  The ?scalabilityMode parameter allows controlling the (codec-specific) scalability modes from <a href="https://w3c.github.io/webrtc-svc/#dependencydiagrams*">WebRTC-SVC</a>.<br>
+  The ?remb parameter allows disabling transport-cc and falling back to REMB.
+</p>
+<script>
+const SDPUtils = adapter.sdp;
+const searchParameters = new URLSearchParams(window.location.search);
+
+const pc1 = new RTCPeerConnection({sdpSemantics: 'unified-plan'});
+const pc2 = new RTCPeerConnection({sdpSemantics: 'unified-plan'});
+pc1.onicecandidate = (e) => pc2.addIceCandidate(e.candidate);
+pc2.onicecandidate = (e) => pc1.addIceCandidate(e.candidate);
+pc2.ontrack = (e) => show(e.streams[0], true);
+
+const extensionsToFilter = [
+    'urn:ietf:params:rtp-hdrext:sdes:mid',
+    'urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id',
+    'urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id',
+];
+const rids = ['0'];
+const video = {
+  '1080p': {width: 1920, height: 1080},
+  '720p': {width: 1280, height: 720},
+  '360p': {width: 640, height: 360},
+}[searchParameters.get('resolution') || '360p'];
+
+const scalabilityMode = searchParameters.get('scalabilityMode') || 'L3T3_KEY';
+let videoCodec = 'vp9';
+if (searchParameters.has('codec') && ['vp9', 'vp8', 'h264'].includes(searchParameters.get('codec'))) {
+    videoCodec = searchParameters.get('codec');
+}
+
+const remb = searchParameters.has('remb');
+navigator.mediaDevices.getUserMedia({video})
+.then((stream) => {
+    const transceiver = pc1.addTransceiver(stream.getVideoTracks()[0], {
+        streams: [stream],
+        sendEncodings: rids.map(rid => ({rid, scalabilityMode})),
+    });
+    document.getElementById('encodingInfo').innerText = 'Encodings: ' + JSON.stringify(rids.map(rid => ({rid, scalabilityMode})), null, 2);
+    const codecs = RTCRtpSender.getCapabilities('video').codecs
+        .filter(c => {
+            return c.mimeType.toLowerCase() === 'video/' + videoCodec;
+        })
+        .filter(c => {
+            return !searchParameters.has('profile') || c.sdpFmtpLine.includes(searchParameters.get('profile'));
+        });
+    transceiver.setCodecPreferences(codecs);
+    show(stream, false);
+    return pc1.createOffer();
+})
+.then((offer) => {
+    return Promise.all([
+        pc1.setLocalDescription(offer),
+        pc2.setRemoteDescription({
+            type: 'offer',
+            sdp: offer.sdp,
+        }),
+    ]);
+})
+.then(() => pc2.createAnswer())
+.then(answer => {
+    return Promise.all([
+        pc2.setLocalDescription(answer),
+        pc1.setRemoteDescription({
+            type: 'answer',
+            sdp: answer.sdp,
+        }),
+    ]);
+})
+.then(() => {
+    const btn = document.getElementById('scale');
+    btn.onclick = () => {
+        const transceiver = pc1.getTransceivers()[0];
+        const params = transceiver.sender.getParameters();
+        params.encodings.forEach(encoding => {
+            encoding.scaleResolutionDownBy = (encoding.scaleResolutionDownBy || 1) * 2;
+        });
+        document.getElementById('encodingInfo').innerText = 'Encodings: ' + JSON.stringify(params.encodings, null, 2);
+        transceiver.sender.setParameters(params);
+    };
+    window.setInterval(() => {
+        draw(pc1, pc2);
+    }, 2000);
+})
+.catch(e => console.error(e));
+</script>
+</body>
+</html>
