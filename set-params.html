@@ -5,7 +5,6 @@
 <script src="https://webrtc.github.io/samples/src/js/third_party/graph.js"></script>
 <script src="test-assert.js"></script>
 <script src="draw-graphs.js"></script>
-<script src="bitrate-helper.js"></script>
 <style>
 video {
   width: 320px;
@@ -30,6 +29,7 @@ video {
     <h2>Issues</h2>
     <div id="issue1">
         <span>
+            Wiat 7 seconds until everything is loaded.<br/>
             Click on each step and wait some seconds to let changes be applied:<br/>
             Reload the page to test each issue.
         </span>
@@ -56,6 +56,9 @@ video {
         </p>
         <button class="scale" data-scale="2"  data-active="true">1. Enable encoding, set scaleResolutionDownBy=2 (width=320,height=240).</button>
         <span>Result: Bitrate increases to 1.5Mbps. More bitrate than what we see when scaleResolutionDownBy is set to 1.</span>
+        <h4>Fix to Issue 3</h4>
+        <button class="scale" data-scale="2"  data-maxBitrate="172000" data-active="true">1. Enable encoding, set scaleResolutionDownBy=2 (width=320,height=240) and maxBitrate.</button>
+        <span>Result: Bitrate decreases to the expected value (as calculated in <a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/modules/video_coding/codecs/vp9/svc_config.cc;l=145;drc=e2587664bf8ad704d7bee1989e9186729ef950e0">svc_config.cc</a>).</span>
     </div>
 </div>
 <script>
@@ -110,6 +113,7 @@ navigator.mediaDevices.getUserMedia({video})
     const buttons = document.getElementsByClassName('scale');
     for (let i = 0; i < buttons.length; i++) {
         const button = buttons[i];
+        button.disabled = true;
         button.onclick = () => {
             let scale = event.target.getAttribute('data-scale');
             let maxBitrate = event.target.getAttribute('data-maxBitrate');
@@ -122,7 +126,11 @@ navigator.mediaDevices.getUserMedia({video})
             console.log('scale', scale, 'active', active, 'maxBitrate', maxBitrate);
             setParameters(scale, active, maxBitrate);
         };
+        setTimeout(() => {
+            button.disabled = false;
+        }, 7000);
     }
+
     window.setInterval(() => {
         draw(pc1, pc2);
     }, 2000);
